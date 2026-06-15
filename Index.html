@@ -31,7 +31,6 @@
       <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">ฟอร์มแจ้งปัญหา</h2>
       <form id="issueForm" onsubmit="handleFormSubmit(event)">
         
-        <!-- ส่วนที่แก้ไขให้เป็นช่องพิมพ์ค้นหา (Datalist) -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label class="block text-gray-700 text-sm font-bold mb-2">ชื่อผู้ส่งซ่อม</label>
@@ -110,21 +109,26 @@
   </div>
 
   <script>
+    // ⚠️ ใส่ URL ของ Web App จาก Google Apps Script ที่นี่
+    const GAS_URL = "https://script.google.com/macros/s/ใส่_Deployment_ID_ของคุณ/exec";
+
     window.onload = function() {
       // โหลดข้อมูลใส่ Datalist
-      google.script.run.withSuccessHandler(function(config) {
-        populateDatalist('nameList', config.names);
-        populateDatalist('deptList', config.depts);
-        populateDatalist('groupList', config.groups);
-        document.getElementById('loadingOverlay').classList.add('hidden'); 
-      }).getConfigData();
+      fetch(GAS_URL + "?action=getConfigData")
+        .then(res => res.json())
+        .then(config => {
+          populateDatalist('nameList', config.names);
+          populateDatalist('deptList', config.depts);
+          populateDatalist('groupList', config.groups);
+          document.getElementById('loadingOverlay').classList.add('hidden'); 
+        })
+        .catch(err => console.error("Error loading config:", err));
 
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('tab') === 'dashTab') { showTab('dashTab'); } 
       else { showTab('formTab'); }
     };
 
-    // ฟังก์ชันช่วยนำข้อมูลใส่ Datalist เพื่อให้ค้นหาได้
     function populateDatalist(elementId, items) {
       const datalist = document.getElementById(elementId);
       items.forEach(item => {
@@ -183,45 +187,59 @@
     }
 
     function sendToGoogle(data, btn) {
-      google.script.run.withSuccessHandler(function(ticketId) {
-        alert('แจ้งปัญหาสำเร็จ! หมายเลขติดตามคือ: ' + ticketId);
+      fetch(GAS_URL + "?action=submitIssue", {
+        method: "POST",
+        body: JSON.stringify(data)
+      })
+      .then(res => res.json())
+      .then(result => {
+        alert('แจ้งปัญหาสำเร็จ! หมายเลขติดตามคือ: ' + result.ticketId);
         document.getElementById('issueForm').reset();
         btn.innerText = 'ส่งข้อมูลแจ้งปัญหา';
         btn.disabled = false;
         showTab('dashTab');
-      }).submitIssue(data);
+      })
+      .catch(err => {
+        alert('เกิดข้อผิดพลาดในการส่งข้อมูล');
+        btn.disabled = false;
+        btn.innerText = 'ส่งข้อมูลแจ้งปัญหา';
+      });
     }
 
     function loadDashboard() {
       const tbody = document.getElementById('tableBody');
       tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>';
       
-      google.script.run.withSuccessHandler(function(data) {
-        tbody.innerHTML = '';
-        if(data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">ยังไม่มีข้อมูลแจ้งปัญหา</td></tr>';
-          return;
-        }
-
-        data.forEach(item => {
-          let statusClass = item.status === 'รอดำเนินการ' ? "bg-red-100 text-red-700" : (item.status === 'กำลังแก้ไข' ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700");
-          const imageLink = item.imageUrl ? `<a href="${item.imageUrl}" target="_blank" class="text-xs text-blue-600 underline mt-1 inline-block">🖼️ ดูรูปภาพแนบ</a>` : '';
-
-          const tr = document.createElement('tr');
-          tr.className = "border-b hover:bg-gray-50";
-          tr.innerHTML = `
-            <td class="p-3 whitespace-nowrap"><span class="text-xs text-gray-400 block">${item.timestamp.substring(0,16)}</span>${item.ticketId}</td>
-            <td class="p-3 font-medium text-blue-800">${item.system}</td>
-            <td class="p-3">${item.issue}<br>${imageLink}<br>
-              <span class="text-xs text-blue-600 block mt-1">IT รับผิดชอบ: ${item.itName}</span>
-              <span class="text-xs text-gray-500">หมายเหตุ: ${item.remark || '-'}</span>
-            </td>
-            <td class="p-3">${item.name}<br><span class="text-xs text-gray-500">${item.dept} (${item.group})</span></td>
-            <td class="p-3"><span class="px-2 py-1 rounded text-xs font-semibold ${statusClass}">${item.status}</span></td>
-          `;
-          tbody.appendChild(tr);
+      fetch(GAS_URL + "?action=getIssues")
+        .then(res => res.json())
+        .then(data => {
+          tbody.innerHTML = '';
+          if(data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-gray-500">ยังไม่มีข้อมูลแจ้งปัญหา</td></tr>';
+            return;
+          }
+          data.forEach(item => {
+            let statusClass = item.status === 'รอดำเนินการ' ? "bg-red-100 text-red-700" : (item.status === 'กำลังแก้ไข' ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700");
+            const imageLink = item.imageUrl ? `<a href="${item.imageUrl}" target="_blank" class="text-xs text-blue-600 underline mt-1 inline-block">🖼️ ดูรูปภาพแนบ</a>` : '';
+            const tr = document.createElement('tr');
+            tr.className = "border-b hover:bg-gray-50";
+            tr.innerHTML = `
+              <td class="p-3 whitespace-nowrap"><span class="text-xs text-gray-400 block">${item.timestamp.substring(0,16)}</span>${item.ticketId}</td>
+              <td class="p-3 font-medium text-blue-800">${item.system}</td>
+              <td class="p-3">${item.issue}<br>${imageLink}<br>
+                <span class="text-xs text-blue-600 block mt-1">IT รับผิดชอบ: ${item.itName}</span>
+                <span class="text-xs text-gray-500">หมายเหตุ: ${item.remark || '-'}</span>
+              </td>
+              <td class="p-3">${item.name}<br><span class="text-xs text-gray-500">${item.dept} (${item.group})</span></td>
+              <td class="p-3"><span class="px-2 py-1 rounded text-xs font-semibold ${statusClass}">${item.status}</span></td>
+            `;
+            tbody.appendChild(tr);
+          });
+        })
+        .catch(err => {
+          tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-red-500">ไม่สามารถโหลดข้อมูลได้</td></tr>';
+          console.error(err);
         });
-      }).getIssues();
     }
   </script>
 </body>
