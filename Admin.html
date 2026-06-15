@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IT Admin - จัดการปัญหา</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style> body { font-family: 'Prompt', sans-serif; } </style>
+</head>
+<body class="bg-gray-800 min-h-screen p-4">
+
+  <div class="max-w-7xl mx-auto">
+    <div class="bg-white rounded-lg p-6 mb-6 flex justify-between items-center shadow-lg">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-800">ระบบจัดการปัญหา (Admin Panel)</h1>
+        <p class="text-gray-500 text-sm">อัปเดตสถานะและหมายเหตุการซ่อมของโรงพยาบาล</p>
+      </div>
+      <button onclick="loadAdminData()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow transition">
+        🔄 รีเฟรชข้อมูล
+      </button>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-lg overflow-hidden overflow-x-auto">
+      <table class="w-full text-left border-collapse min-w-[900px]">
+        <thead>
+          <tr class="bg-gray-200 text-gray-700">
+            <th class="p-3 border-b">Ticket ID / เวลา</th>
+            <th class="p-3 border-b">ผู้แจ้ง / แผนก</th>
+            <th class="p-3 border-b w-1/4">ปัญหาที่พบ</th>
+            <th class="p-3 border-b w-48">อัปเดตสถานะ</th>
+            <th class="p-3 border-b w-1/4">หมายเหตุจาก IT</th>
+            <th class="p-3 border-b text-center w-24">จัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="adminTableBody" class="text-sm">
+          <tr><td colspan="6" class="p-6 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let globalItNames = []; // ตัวแปรเก็บรายชื่อ IT
+
+    window.onload = function() {
+      // โหลดรายชื่อ IT จาก Sheet Config ก่อนโหลดตาราง
+      google.script.run.withSuccessHandler(function(config) {
+        globalItNames = config.itNames;
+        loadAdminData();
+      }).getConfigData();
+    };
+
+    function loadAdminData() {
+      const tbody = document.getElementById('adminTableBody');
+      tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-gray-500">กำลังโหลดข้อมูล...</td></tr>';
+      google.script.run.withSuccessHandler(renderTable).getIssues();
+    }
+
+    function renderTable(data) {
+      const tbody = document.getElementById('adminTableBody');
+      tbody.innerHTML = '';
+      
+      if(data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-gray-500">ยังไม่มีรายการแจ้งปัญหา</td></tr>';
+        return;
+      }
+
+      data.forEach(item => {
+        const imageLink = item.imageUrl ? `<a href="${item.imageUrl}" target="_blank" class="text-xs text-blue-600 underline mt-1 inline-block">🖼️ ดูรูปภาพแนบ</a>` : '';
+        
+        // สร้าง Dropdown สำหรับชื่อ IT
+        let itOptions = `<option value="">-- เลือกผู้ซ่อม --</option>`;
+        let isItFound = false;
+        globalItNames.forEach(name => {
+          if (item.itName === name) isItFound = true;
+          itOptions += `<option value="${name}" ${item.itName === name ? 'selected' : ''}>${name}</option>`;
+        });
+        // ป้องกันชื่อเก่าหายไป ถ้าไม่มีใน Config
+        if (item.itName && item.itName !== '-' && !isItFound) {
+          itOptions += `<option value="${item.itName}" selected>${item.itName}</option>`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.className = "border-b hover:bg-gray-50";
+        tr.innerHTML = `
+          <td class="p-3 whitespace-nowrap">
+            <strong class="text-blue-600">${item.ticketId}</strong><br>
+            <span class="text-xs text-gray-500">${item.timestamp.substring(0,16)}</span>
+          </td>
+          <td class="p-3">
+            <strong>${item.name}</strong><br>
+            <span class="text-xs font-semibold text-gray-600">หน่วยงาน: ${item.dept}</span><br>
+            <span class="text-xs text-gray-500">กลุ่มงาน: ${item.group}</span>
+          </td>
+          <td class="p-3">
+            <span class="px-2 py-1 bg-gray-100 rounded text-xs mb-1 inline-block">${item.system}</span><br>
+            ${item.issue}<br>${imageLink}
+          </td>
+          <td class="p-3">
+            <select id="status-${item.ticketId}" class="w-full border rounded p-1 text-sm outline-none focus:border-blue-500 mb-2">
+              <option value="รอดำเนินการ" ${item.status === 'รอดำเนินการ' ? 'selected' : ''}>🔴 รอดำเนินการ</option>
+              <option value="กำลังแก้ไข" ${item.status === 'กำลังแก้ไข' ? 'selected' : ''}>🟡 กำลังแก้ไข</option>
+              <option value="เสร็จสิ้น" ${item.status === 'เสร็จสิ้น' ? 'selected' : ''}>🟢 เสร็จสิ้น</option>
+            </select>
+            <select id="itName-${item.ticketId}" class="w-full border rounded p-1 text-sm outline-none focus:border-blue-500 bg-blue-50">
+              ${itOptions}
+            </select>
+          </td>
+          <td class="p-3">
+            <textarea id="remark-${item.ticketId}" placeholder="ระบุการแก้ไข..." class="w-full border rounded p-1 text-sm outline-none focus:border-blue-500" rows="2">${item.remark}</textarea>
+          </td>
+          <td class="p-3 text-center">
+            <button onclick="saveUpdate('${item.ticketId}')" id="btn-${item.ticketId}" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs shadow transition">บันทึก</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function saveUpdate(ticketId) {
+      const btn = document.getElementById('btn-' + ticketId);
+      const status = document.getElementById('status-' + ticketId).value;
+      const remark = document.getElementById('remark-' + ticketId).value;
+      const itName = document.getElementById('itName-' + ticketId).value;
+
+      btn.innerText = '⏳';
+      btn.disabled = true;
+      btn.classList.replace('bg-green-500', 'bg-gray-400');
+
+      google.script.run.withSuccessHandler(function(res) {
+        btn.innerText = 'บันทึก';
+        btn.disabled = false;
+        btn.classList.replace('bg-gray-400', 'bg-green-500');
+        if(res !== 'success') alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      }).updateIssue(ticketId, status, remark, itName);
+    }
+  </script>
+</body>
+</html>
